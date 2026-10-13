@@ -35,6 +35,8 @@ of Temporal primitives. Tools as activities or workflow functions, every turn a 
 replayable history. The harness packages those primitives into a toolkit built for first-class
 agent development, so you get the power without hand-rolling the orchestration.
 
+[Watch the high-level Temporal Agent Harness Explainer](https://github.com/user-attachments/assets/18a34eb2-fc6d-446d-9507-7fe4c870492f)
+
 ## Installation
 
 Two ways in, depending on what you want:
@@ -103,6 +105,7 @@ dependencies = [
     #   jev             Jev-backed auto mode for tool approvals (worker only)
     #   openai-agents   the OpenAI Agents SDK integration
     #   pydantic-ai     the Pydantic AI integration
+    #   typesafe        typed decisions via the canonical temporalio-typesafe plugin
     #   s3              S3-backed offload for large payloads
     #
     # What each one pulls in, and when you actually need it, is in the Extras table below.
