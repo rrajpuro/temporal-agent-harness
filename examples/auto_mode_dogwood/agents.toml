@@ -1,0 +1,17 @@
+# Registry of agents the Dogwood auto-mode example UI can launch.
+#
+# The packaged server (`just server`) reads this file and passes the parsed registry into the
+# packaged SessionManagerWorkflow, which serves it back over the `available_agents` query.
+
+[[agents]]
+key = "auto-mode-dogwood-travel"
+workflow_type = "AutoModeDogwoodTravelAgent"
+agent = "examples.auto_mode_dogwood.workflow:AutoModeDogwoodTravelAgentWorkflow"
+task_queue = "auto-mode-dogwood-agent"
+label = "Travel agent (Dogwood Auto mode)"
+description = """
+The Monty conversational travel agent under AUTO MODE, judged by a Dogwood tool policy over
+Nexus that sees the whole session. The agent asks for the trip on a form (traveler, route,
+date), and the policy only lets through bookings that match a form you filled in: a booking for
+anyone else, or on another day, is refused. Scripts run unless the policy forbids what they do
+(booking in a loop, say), and searches run unattended."""

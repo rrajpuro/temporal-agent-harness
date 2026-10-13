@@ -1,0 +1,75 @@
+# Scoped justfile for the Dogwood auto-mode example (examples/auto_mode_dogwood).
+# Run from this directory: `just <recipe>`.
+#
+# Local stack (each in its own terminal):
+#   just temporal          # 1. local Temporal dev server (or bring your own)
+#   just endpoint          # 2. once per server: the tool-verifier Nexus endpoint
+#   just verifier          # 3. the Dogwood verifier, serving policies/travel.dw
+#   just session-manager   # 4. packaged session-manager worker
+#   just server            # 5. FastAPI API + UI on :8000
+#   just worker            # 6. this example's agent worker
+#
+# First-time setup: `cp .env.example .env.local` from the repo root and fill it in (Temporal
+# connection + GEMINI_API_KEY + TYPESAFE_API_KEY), and set DOGWOOD_VERIFIER_DIR to a checkout of
+# temporal-untrusted-workers' verifiers/dogwood. See README.md.
+
+import '../../scripts/untagged-notice.just'
+
+set dotenv-path := "../../.env.local"
+set dotenv-load := true
+# TEMPORAL_CONFIG_FILE (from the repo-root .env.local) is a path relative to the repo root, and
+# the `temporal` CLI reads it too, so every recipe runs from there.
+set working-directory := "../.."
+
+policies := justfile_directory() / "policies"
+# The verifier's durable store: the installed policies and every session's history.
+store := justfile_directory() / ".dogwood" / "travel.redb"
+
+# List available recipes (bare `just`).
+default:
+    @just --list
+
+# Start a local Temporal dev server (Web UI: http://localhost:8233; needs the `temporal` CLI).
+temporal:
+    temporal server start-dev
+
+# Create the Nexus endpoint the agent asks for verdicts, routed to the verifier's task queue.
+endpoint:
+    temporal operator nexus endpoint create --name tool-verifier \
+        --target-namespace default --target-task-queue tool-verifier
+
+# Run the Dogwood verifier on this example's policy (needs cargo and DOGWOOD_VERIFIER_DIR).
+verifier:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "${DOGWOOD_VERIFIER_DIR:-}" ]; then
+        echo "error: set DOGWOOD_VERIFIER_DIR to temporal-untrusted-workers/verifiers/dogwood" >&2
+        exit 1
+    fi
+    mkdir -p "$(dirname "{{store}}")"
+    cd "$DOGWOOD_VERIFIER_DIR"
+    DOGWOOD_POLICY_FILE="{{policies}}/travel.dw" \
+    DOGWOOD_SCHEMA_FILE="{{policies}}/schema.cedarschema" \
+    DOGWOOD_EVENT_SCHEMA_FILE="{{policies}}/events.dwschema" \
+    DOGWOOD_STORE="{{store}}" \
+        cargo run --release -p dogwood-verifier
+
+# Delete the verifier's store, and with it every session's history. Stop the verifier first.
+reset-store:
+    rm -rf "{{justfile_directory()}}/.dogwood"
+
+# Regenerate policies/schema.cedarschema after changing the agent's tools or messages.
+schema:
+    uv run --group examples python -m examples.auto_mode_dogwood.schema
+
+# Run the packaged session-manager worker (`temporal-agent-harness session-manager`).
+session-manager:
+    uv run --group examples temporal-agent-harness session-manager
+
+# Serve the Svelte UI + FastAPI API on http://localhost:8000, pointed at this example's registry.
+server:
+    uv run --group examples temporal-agent-harness serve "{{justfile_directory()}}/agents.toml" --host 0.0.0.0 --port 8000
+
+# Run the Dogwood auto-mode agent worker (needs GEMINI_API_KEY and TYPESAFE_API_KEY).
+worker:
+    uv run --group examples python -m examples.auto_mode_dogwood.worker

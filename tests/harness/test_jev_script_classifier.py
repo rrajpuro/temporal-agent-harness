@@ -1,6 +1,6 @@
 # ABOUTME: Tests for jev_script_classifier: the request it asks Jev about a Code Mode script,
 # feature validation, and the jev_classify activity's projection of TypeSafe's answers. The
-# classifier's dispatch from a real workflow is covered end to end in test_cedar_approvals.py.
+# classifier's dispatch from a real workflow is covered end to end in test_dogwood_approvals.py.
 
 from __future__ import annotations
 
@@ -28,17 +28,17 @@ SCRIPT = "for f in ids:\n    book_flight(f)\n"
 
 
 def _ctx(code_mode: CodeModeCall | None) -> AutoApprovalContext:
-    criteria_set = AutoApprovalCriteriaSet(effect="Judged by the Cedar policy.")
+    criteria_set = AutoApprovalCriteriaSet(effect="Judged by the Dogwood policy.")
     return AutoApprovalContext(
         tool_name="run_travel_code",
         tool_input={"script": SCRIPT},
         inherently_safe=True,
         tool_description="Run a script. Host functions: book_flight(flight_id: str).",
         criteria=AutoApprovalCriteria(
-            sets={"cedar": criteria_set}, default="cedar", context={"environment": "test"}
+            sets={"dogwood": criteria_set}, default="dogwood", context={"environment": "test"}
         ),
         criteria_set=criteria_set,
-        criteria_set_name="cedar",
+        criteria_set_name="dogwood",
         code_mode=code_mode,
     )
 

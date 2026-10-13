@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
 # ---------------------------------------------------------------------------
 # Protocol constants — workflow must use these exact names
@@ -328,6 +328,33 @@ class CodeModeCall:
     host_functions: frozenset[str]
 
 
+class ReceivedInputKind(StrEnum):
+    """What a :class:`ReceivedInput` is."""
+
+    MESSAGE = "message"
+    TOOL_RESULT = "tool_result"
+
+
+@dataclass(frozen=True)
+class ReceivedInput:
+    """One thing the agent received during this run: a message it accepted, or a tool's result.
+
+    The runner records these in arrival order and hands them to the evaluator as
+    :attr:`AutoApprovalContext.received`, so a policy can ask where a value came from, for
+    example "only book for a traveler the user named".
+
+    ``name`` is the ``@agent.accepts`` handler for a message, and the tool's name for a tool
+    result. ``payload`` is the message's input-model JSON, or the tool's return value as JSON.
+    ``id`` is unique within the run: the ``send_agent_message`` update's ID for a message, the
+    tool call's ID for a tool result.
+    """
+
+    kind: ReceivedInputKind
+    name: str
+    payload: JsonValue
+    id: str
+
+
 @dataclass
 class AutoApprovalContext:
     """The facts about a single tool call that an auto mode evaluator judges.
@@ -377,6 +404,9 @@ class AutoApprovalContext:
 
     ``code_mode`` is set when the call is a Code Mode script (see :class:`CodeModeCall`), and
     ``None`` for every other tool.
+
+    ``received`` is everything this run has received so far, oldest first (see
+    :class:`ReceivedInput`): the messages it accepted and the results of the tools it ran.
     """
 
     tool_name: str
@@ -390,6 +420,7 @@ class AutoApprovalContext:
     criteria_set: AutoApprovalCriteriaSet = field(kw_only=True)
     criteria_set_name: str = field(kw_only=True)
     code_mode: CodeModeCall | None = field(default=None, kw_only=True)
+    received: tuple[ReceivedInput, ...] = field(default=(), kw_only=True)
 
     @property
     def thresholds(self) -> tuple[float, float | None]:

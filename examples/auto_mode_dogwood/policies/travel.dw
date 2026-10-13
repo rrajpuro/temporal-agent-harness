@@ -1,0 +1,153 @@
+// Tool policy for the Dogwood auto mode travel agent.
+//
+// `permit` says what may run unattended. A `forbid` annotated @decision("escalate") sends the
+// call to the user; any other `forbid`, or no `permit` at all, refuses it, and the model is told
+// which policy refused it.
+//
+// Actions are "travel-agent/<tool>". The session's history is there to look back on: each
+// tool's result as "travel-agent/<tool>/result" (among them the trip form the user filled in,
+// "travel-agent/ask_trip_details/result") and each chat message as "update/ask", all `received`
+// events of this run only. See schema.cedarschema for every action's input.
+
+// ---------------------------------------------------------------- the script tool
+
+// A script runs unattended unless a `forbid` below matches. Each host call it makes is still
+// judged on its own, so a script that books once runs, and the booking comes to the user.
+@id("scripts")
+permit (principal, action == Temporal::Action::"travel-agent/run_travel_code", resource)
+when {
+  context.input has arg0 &&
+  context.input.arg0 has dynamic_code &&
+  !context.input.arg0.dynamic_code
+};
+
+// eval, exec and compile run code the analysis can't read, so a script using them is refused.
+@id("no-dynamic-code")
+forbid (principal, action == Temporal::Action::"travel-agent/run_travel_code", resource)
+when {
+  context.input has arg0 &&
+  context.input.arg0 has dynamic_code &&
+  context.input.arg0.dynamic_code
+};
+
+// Never book in a loop, concurrently, or more than once per script.
+@id("no-bulk-flight-booking")
+forbid (principal, action == Temporal::Action::"travel-agent/run_travel_code", resource)
+when {
+  context.input has arg0 &&
+  context.input.arg0 has uses &&
+  context.input.arg0.uses has book_flight &&
+  (context.input.arg0.uses.book_flight.in_loop ||
+   context.input.arg0.uses.book_flight.concurrent ||
+   context.input.arg0.uses.book_flight.call_sites > 1)
+};
+
+@id("no-bulk-hotel-booking")
+forbid (principal, action == Temporal::Action::"travel-agent/run_travel_code", resource)
+when {
+  context.input has arg0 &&
+  context.input.arg0 has uses &&
+  context.input.arg0.uses has book_hotel &&
+  (context.input.arg0.uses.book_hotel.in_loop ||
+   context.input.arg0.uses.book_hotel.concurrent ||
+   context.input.arg0.uses.book_hotel.call_sites > 1)
+};
+
+// A script the classifier thinks could run away is refused.
+@id("no-runaway-scripts")
+forbid (principal, action == Temporal::Action::"travel-agent/run_travel_code", resource)
+when {
+  context.input has arg0 &&
+  context.input.arg0 has classification &&
+  context.input.arg0.classification has unbounded_iteration &&
+  context.input.arg0.classification.unbounded_iteration >= 30
+};
+
+// ---------------------------------------------------------------- each host call
+
+// Searching and summarizing run unattended.
+@id("lookups")
+permit (
+  principal,
+  action in [
+    Temporal::Action::"travel-agent/search_flights",
+    Temporal::Action::"travel-agent/search_hotels",
+    Temporal::Action::"travel-agent/get_trip_summary"
+  ],
+  resource
+);
+
+// ---------------------------------------------------------------- bookings: only what the form says
+
+// A flight booking runs unattended when the user put its passenger and date on a trip form
+// (`ask_trip_details`) earlier in this session: the date there, or the date back.
+@id("flights-on-the-trip-form")
+permit (principal, action == Temporal::Action::"travel-agent/book_flight", resource)
+when temporal {
+  formerly within 30d Temporal::Action::"travel-agent/ask_trip_details/result"::received{
+    input.arg0.traveler_name: context.input.arg0.request.passenger_name,
+    input.arg0.departure_date: context.input.arg0.request.date
+  }
+};
+
+@id("return-flights-on-the-trip-form")
+permit (principal, action == Temporal::Action::"travel-agent/book_flight", resource)
+when temporal {
+  formerly within 30d Temporal::Action::"travel-agent/ask_trip_details/result"::received{
+    input.arg0.traveler_name: context.input.arg0.request.passenger_name,
+    input.arg0.return_date: context.input.arg0.request.date
+  }
+};
+
+// A flight booking without a passenger name or a date is refused...
+@id("flights-need-a-passenger-and-date")
+forbid (principal, action == Temporal::Action::"travel-agent/book_flight", resource)
+unless {
+  context.input has arg0 &&
+  context.input.arg0 has request &&
+  context.input.arg0.request has passenger_name &&
+  context.input.arg0.request has date
+};
+
+// ...and so is one for a traveler or a day no trip form named, however the model came by it.
+// (Two `unless` clauses: the forbid applies only when neither holds.)
+@id("flights-only-as-on-the-trip-form")
+forbid (principal, action == Temporal::Action::"travel-agent/book_flight", resource)
+unless temporal {
+  formerly within 30d Temporal::Action::"travel-agent/ask_trip_details/result"::received{
+    input.arg0.traveler_name: context.input.arg0.request.passenger_name,
+    input.arg0.departure_date: context.input.arg0.request.date
+  }
+}
+unless temporal {
+  formerly within 30d Temporal::Action::"travel-agent/ask_trip_details/result"::received{
+    input.arg0.traveler_name: context.input.arg0.request.passenger_name,
+    input.arg0.return_date: context.input.arg0.request.date
+  }
+};
+
+// A hotel booking runs unattended when its guest is the traveler on a trip form; any other
+// guest is refused.
+@id("hotels-for-the-trip-form-traveler")
+permit (principal, action == Temporal::Action::"travel-agent/book_hotel", resource)
+when temporal {
+  formerly within 30d Temporal::Action::"travel-agent/ask_trip_details/result"::received{
+    input.arg0.traveler_name: context.input.arg0.request.guest_name
+  }
+};
+
+@id("hotels-need-a-guest")
+forbid (principal, action == Temporal::Action::"travel-agent/book_hotel", resource)
+unless {
+  context.input has arg0 &&
+  context.input.arg0 has request &&
+  context.input.arg0.request has guest_name
+};
+
+@id("hotels-only-for-the-trip-form-traveler")
+forbid (principal, action == Temporal::Action::"travel-agent/book_hotel", resource)
+unless temporal {
+  formerly within 30d Temporal::Action::"travel-agent/ask_trip_details/result"::received{
+    input.arg0.traveler_name: context.input.arg0.request.guest_name
+  }
+};

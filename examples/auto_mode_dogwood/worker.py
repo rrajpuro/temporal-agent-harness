@@ -1,19 +1,19 @@
-"""Worker for the Cedar auto-mode travel agent.
+"""Worker for the Dogwood auto-mode travel agent.
 
 Run from the repo root with:
-    uv run python -m examples.auto_mode_cedar.worker
+    uv run python -m examples.auto_mode_dogwood.worker
 
-(or `just worker` from examples/auto_mode_cedar.)
+(or `just worker` from examples/auto_mode_dogwood.)
 
 Env vars:
-    TEMPORAL_CONFIG_FILE               path to a temporal.toml (set in .env.local)
-    TEMPORAL_PROFILE                   profile name to load (default: "default")
-    GEMINI_API_KEY                     required — the agent converses via the Gemini Interactions API
-    TYPESAFE_API_KEY                   required — Jev classifies each script for the policy
-                                       (TYPESAFE_AI_API_KEY is accepted as an alias)
-    AUTO_MODE_CEDAR_AGENT_TASK_QUEUE   task queue to poll (default: auto-mode-cedar-agent)
+    TEMPORAL_CONFIG_FILE                 path to a temporal.toml (set in .env.local)
+    TEMPORAL_PROFILE                     profile name to load (default: "default")
+    GEMINI_API_KEY                       required — the agent converses via the Gemini Interactions API
+    TYPESAFE_API_KEY                     required — Jev classifies each script for the policy
+                                         (TYPESAFE_AI_API_KEY is accepted as an alias)
+    AUTO_MODE_DOGWOOD_AGENT_TASK_QUEUE   task queue to poll (default: auto-mode-dogwood-agent)
 
-The policy itself is not this worker's: the Cedar verifier serves it behind the `tool-verifier`
+The policy itself is not this worker's: the Dogwood verifier serves it behind the `tool-verifier`
 Nexus endpoint (see README.md). The agent calls it from the workflow, so this worker registers
 nothing for it. A missing verifier shows up as every gated call escalating to you, with the
 reason on its `auto_approval_evaluation_error` event.
@@ -36,7 +36,7 @@ from temporal_agent_harness.harness.jev_approvals.activity import typesafe_api_k
 from temporal_agent_harness.plugin import AgentHarnessPlugin
 
 from ..monty import activities
-from .workflow import TASK_QUEUE, AutoModeCedarTravelAgentWorkflow
+from .workflow import TASK_QUEUE, AutoModeDogwoodTravelAgentWorkflow
 
 
 async def main() -> None:
@@ -48,7 +48,7 @@ async def main() -> None:
     for name in ("temporalio", "temporalio.workflow", "temporalio.activity"):
         logging.getLogger(name).setLevel(logging.INFO)
 
-    task_queue = os.environ.get("AUTO_MODE_CEDAR_AGENT_TASK_QUEUE", TASK_QUEUE)
+    task_queue = os.environ.get("AUTO_MODE_DOGWOOD_AGENT_TASK_QUEUE", TASK_QUEUE)
 
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     if not gemini_api_key:
@@ -56,7 +56,7 @@ async def main() -> None:
     if not typesafe_api_key():
         sys.exit(
             "error: TYPESAFE_API_KEY env var not set — Jev classifies each script before the "
-            "Cedar policy judges it."
+            "Dogwood policy judges it."
         )
 
     # Harness plugin LAST so the Gemini plugin's payload converter wins. The harness plugin
@@ -71,9 +71,9 @@ async def main() -> None:
         ],
     )
 
-    worker = Worker(client, task_queue=task_queue, workflows=[AutoModeCedarTravelAgentWorkflow])
+    worker = Worker(client, task_queue=task_queue, workflows=[AutoModeDogwoodTravelAgentWorkflow])
     print(
-        f"Cedar auto-mode agent worker ready: "
+        f"Dogwood auto-mode agent worker ready: "
         f"profile={os.environ.get('TEMPORAL_PROFILE', 'default')!r} "
         f"address={connect_config.get('target_host')} "
         f"namespace={connect_config.get('namespace')} "

@@ -2,7 +2,7 @@
 
 A :data:`~temporal_agent_harness.harness.code_mode.ScriptClassifier`, for an evaluator that
 judges scripts by their characteristics, like
-:func:`~temporal_agent_harness.harness.cedar_approvals.cedar_evaluator`. It covers what
+:func:`~temporal_agent_harness.harness.dogwood_approvals.dogwood_evaluator`. It covers what
 :func:`~temporal_agent_harness.harness.code_mode.analyze_script` can't read off the source:
 where data flows, whether a loop is bounded, who the arguments name. Every question goes out in
 one request, and each answer comes back as how likely "yes" is, from 0 to 100.
@@ -41,8 +41,7 @@ class ScriptFeature(BaseModel):
     """One yes/no question about a script, and the name its answer goes by.
 
     ``key`` is where a policy finds the answer, e.g.
-    ``context.parameters.arg0.data.classification.<key>`` in Cedar, so it must be an
-    identifier. ``yes`` and ``no`` say what each answer means, which is what keeps a yes/no
+    ``context.input.arg0.classification.<key>`` in Dogwood, so it must be an identifier. ``yes`` and ``no`` say what each answer means, which is what keeps a yes/no
     model's answers consistent from script to script.
     """
 

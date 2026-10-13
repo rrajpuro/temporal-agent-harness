@@ -175,6 +175,7 @@ async def book_flight_activity(request: FlightBookingRequest) -> FlightBookingRe
         flight_id=request.flight_id,
         passenger_name=request.passenger_name,
         status="confirmed",
+        date=request.date,
     )
 
 

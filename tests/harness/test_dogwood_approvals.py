@@ -1,7 +1,8 @@
-# ABOUTME: Tests for cedar_evaluator, the auto mode evaluator that asks a VerifyToolCalls Nexus
-# operation. Pure tests cover the verdict mapping and the script parameter. End-to-end tests run
-# a real agent on the dev server against a stand-in handler that answers the way the Cedar
-# verifier does: a json/protobuf payload carrying VerifyToolCallsResponse's messageType.
+# ABOUTME: Tests for dogwood_evaluator, the auto mode evaluator that asks a VerifyToolCalls Nexus
+# operation after recording the run's input events. Pure tests cover the verdict mapping, the
+# script parameter and the input events. End-to-end tests run a real agent on the dev server
+# against a stand-in handler that answers the way the Dogwood verifier does: json/protobuf payloads
+# carrying the response messageTypes.
 
 from __future__ import annotations
 
@@ -34,14 +35,19 @@ from temporal_agent_harness.harness.agent_protocol import (
     AutoApprovalCriteria,
     AutoApprovalCriteriaSet,
     AutoApprovalVerdict,
+    ReceivedInput,
+    ReceivedInputKind,
     TextMessage,
     TextReply,
     ToolApprovalPolicy,
 )
-from temporal_agent_harness.harness.cedar_approvals import (
+from temporal_agent_harness.harness.dogwood_approvals import (
+    Decision,
+    RecordInputEventsResponse,
     VerifyToolCallsResponse,
-    cedar_evaluator,
+    dogwood_evaluator,
     decide,
+    input_events,
     script_parameter,
 )
 from temporal_agent_harness.harness.code_mode import analyze_script
@@ -58,45 +64,84 @@ from temporal_agent_harness.harness.jev_approvals import (
 # ---------------------------------------------------------------------------
 
 
+def _response(decision: str, reason: str = "") -> VerifyToolCallsResponse:
+    return VerifyToolCallsResponse(decision=Decision.Value(decision), reason=reason)
+
+
 @pytest.mark.parametrize(
-    ("response", "verdict"),
+    ("decision", "verdict"),
     [
-        (VerifyToolCallsResponse(allowed=True), AutoApprovalVerdict.APPROVE),
-        (
-            VerifyToolCallsResponse(
-                allowed=False, reason="tool p/refund denied by Cedar policy refund-limit"
-            ),
-            AutoApprovalVerdict.DENY,
-        ),
-        (
-            VerifyToolCallsResponse(
-                allowed=False, reason="tool p/refund not permitted by any Cedar policy"
-            ),
-            AutoApprovalVerdict.ESCALATE,
-        ),
-        (VerifyToolCallsResponse(), AutoApprovalVerdict.ESCALATE),
+        ("DECISION_APPROVED", AutoApprovalVerdict.APPROVE),
+        ("DECISION_DENIED", AutoApprovalVerdict.DENY),
+        ("DECISION_ESCALATE", AutoApprovalVerdict.ESCALATE),
     ],
 )
-def test_decide(response: VerifyToolCallsResponse, verdict: AutoApprovalVerdict) -> None:
-    decision = decide(response, details={"action": "p/refund"})
-    assert decision.verdict is verdict
-    assert decision.reason
-    assert decision.details["action"] == "p/refund"
-    assert decision.details["allowed"] is response.allowed
+def test_decide(decision: str, verdict: AutoApprovalVerdict) -> None:
+    result = decide(_response(decision), details={"action": "p/refund"})
+    assert result.verdict is verdict
+    assert result.reason
+    assert result.details["action"] == "p/refund"
+    assert result.details["decision"] == decision
 
 
-def test_decodes_the_cedar_verifiers_response_payload() -> None:
-    """The payload the Rust verifier builds (verifiers/cedar/src/main.rs, response_payload)."""
-    payload = Payload(
+@pytest.mark.parametrize("decision", ["DECISION_RETRY_LATER", "DECISION_UNSPECIFIED"])
+def test_no_decision_raises(decision: str) -> None:
+    with pytest.raises(RuntimeError, match=decision):
+        decide(_response(decision, "rate limited"))
+
+
+def _verifier_payload(message: str, data: bytes) -> Payload:
+    """A payload as the Rust verifiers build it (verifiers/host/src/lib.rs, json_proto_payload)."""
+    return Payload(
         metadata={
             "encoding": b"json/protobuf",
-            "messageType": b"temporal_untrusted_workers.toolpolicy.v1.VerifyToolCallsResponse",
+            "messageType": f"temporal_untrusted_workers.toolpolicy.v1.{message}".encode(),
         },
-        data=b'{"allowed":false,"reason":"tool p/x denied by Cedar policy no-x"}',
+        data=data,
     )
-    [response] = pydantic_data_converter.payload_converter.from_payloads([payload])
+
+
+def test_decodes_the_verifiers_response_payloads() -> None:
+    [response, recorded] = pydantic_data_converter.payload_converter.from_payloads(
+        [
+            _verifier_payload(
+                "VerifyToolCallsResponse",
+                b'{"decision":"DECISION_ESCALATE","reason":"tool p/x escalated by Dogwood policy x"}',
+            ),
+            _verifier_payload("RecordInputEventsResponse", b"{}"),
+        ]
+    )
     assert isinstance(response, VerifyToolCallsResponse)
-    assert (response.allowed, response.reason) == (False, "tool p/x denied by Cedar policy no-x")
+    assert response.decision == Decision.Value("DECISION_ESCALATE")
+    assert response.reason == "tool p/x escalated by Dogwood policy x"
+    assert isinstance(recorded, RecordInputEventsResponse)
+
+
+def test_input_events() -> None:
+    received = [
+        ReceivedInput(
+            kind=ReceivedInputKind.MESSAGE, name="ask", payload={"text": "hi"}, id="upd-1"
+        ),
+        ReceivedInput(kind=ReceivedInputKind.TOOL_RESULT, name="refund", payload="ok", id="t1"),
+    ]
+    events = [
+        e.model_dump(mode="json", by_alias=True) for e in input_events(received, action_prefix="p")
+    ]
+    value = "type.googleapis.com/google.protobuf.Value"
+    assert events == [
+        {
+            "kind": "INPUT_EVENT_KIND_UPDATE",
+            "name": "ask",
+            "payloads": [{"@type": value, "value": {"text": "hi"}}],
+            "updateId": "upd-1",
+        },
+        {
+            "kind": "INPUT_EVENT_KIND_ACTIVITY_RESULT",
+            "name": "p/refund/result",
+            "payloads": [{"@type": value, "value": "ok"}],
+            "updateId": "tool-result/t1",
+        },
+    ]
 
 
 def test_script_parameter() -> None:
@@ -120,13 +165,15 @@ def test_script_parameter() -> None:
 # End to end
 # ---------------------------------------------------------------------------
 
-ENDPOINT = "cedar-test-tool-policy"
+ENDPOINT = "dogwood-test-tool-policy"
 POLICY_TASK_QUEUE = f"tool-policy-{uuid.uuid4()}"
 PREFIX = "probe"
 
-# The stand-in policy: maps each request to a response, and records what it was asked.
+# The stand-in policy: maps each request to a response, and records what it was asked and
+# what it was told the run received.
 _POLICY: list[Callable[[dict[str, Any]], VerifyToolCallsResponse]] = []
 _ASKED: list[dict[str, Any]] = []
+_RECORDED: list[dict[str, Any]] = []
 
 
 @nexusrpc.handler.service_handler(name="tool-policy")
@@ -137,6 +184,13 @@ class FakeToolPolicy:
     ) -> VerifyToolCallsResponse:
         _ASKED.append(request)
         return _POLICY[0](request)
+
+    @nexusrpc.handler.sync_operation(name="RecordInputEvents")
+    async def record(
+        self, ctx: nexusrpc.handler.StartOperationContext, request: dict[str, Any]
+    ) -> RecordInputEventsResponse:
+        _RECORDED.append(request)
+        return RecordInputEventsResponse()
 
 
 def _answer(response: VerifyToolCallsResponse) -> None:
@@ -181,7 +235,7 @@ async def fake_jev_classify(request: JevApprovalRequest) -> JevClassificationAns
 
 
 @agent.defn
-class CedarProbeAgent:
+class DogwoodProbeAgent:
     @agent.init
     def __init__(self, config: AgentConfig) -> None:
         self._runner = AgentWorkflowRunner(
@@ -189,10 +243,10 @@ class CedarProbeAgent:
             stream=WorkflowStream(),
             approval_policy_default=ToolApprovalPolicy.auto_mode(),
             auto_approval_criteria_default=AutoApprovalCriteria(
-                sets={"cedar": AutoApprovalCriteriaSet(effect="Judged by the Cedar policy.")},
-                default="cedar",
+                sets={"dogwood": AutoApprovalCriteriaSet(effect="Judged by the Dogwood policy.")},
+                default="dogwood",
             ),
-            auto_mode_evaluator=cedar_evaluator(
+            auto_mode_evaluator=dogwood_evaluator(
                 endpoint=ENDPOINT,
                 action_prefix=PREFIX,
                 script_classifier=jev_script_classifier(_FEATURES),
@@ -238,21 +292,22 @@ async def _run(
 ) -> list[Any]:
     """Send one message and collect turn events until ``until``."""
     _ASKED.clear()
-    task_queue = f"cedar-probe-{uuid.uuid4()}"
+    _RECORDED.clear()
+    task_queue = f"dogwood-probe-{uuid.uuid4()}"
     # Workers start here rather than in the fixture, which runs on another event loop.
     async with Worker(
         env.client, task_queue=POLICY_TASK_QUEUE, nexus_service_handlers=[FakeToolPolicy()]
     ), Worker(
         env.client,
         task_queue=task_queue,
-        workflows=[CedarProbeAgent],
+        workflows=[DogwoodProbeAgent],
         activities=[agent.tool_activity(refund), fake_jev_classify],
         workflow_runner=UnsandboxedWorkflowRunner(),
     ):
         handle = await env.client.start_workflow(
-            CedarProbeAgent.run,
+            DogwoodProbeAgent.run,
             AgentConfig(),
-            id=f"cedar-probe-{uuid.uuid4()}",
+            id=f"dogwood-probe-{uuid.uuid4()}",
             task_queue=task_queue,
         )
         await handle.execute_update(
@@ -285,13 +340,14 @@ def _reply(events: list[Any]) -> str:
 
 
 async def test_allowed_call_runs_unattended(env: WorkflowEnvironment) -> None:
-    _answer(VerifyToolCallsResponse(allowed=True))
+    _answer(_response("DECISION_APPROVED"))
     events = await _run(env, "act", "20")
 
     assert _reply(events) == "refunded:20"
     [request] = _ASKED
-    assert request["caller"]["subject"] == "CedarProbeAgent"
-    assert request["caller"]["workflowId"].startswith("cedar-probe-")
+    assert request["caller"]["subject"] == "DogwoodProbeAgent"
+    assert request["caller"]["workflowId"].startswith("dogwood-probe-")
+    assert request["caller"]["runId"]
     assert request["toolCalls"] == [
         {
             "name": "probe/refund",
@@ -301,27 +357,31 @@ async def test_allowed_call_runs_unattended(env: WorkflowEnvironment) -> None:
         }
     ]
     [ended] = _of(events, AgentEventType.AUTO_APPROVAL_EVALUATION_ENDED)
-    assert ended.evaluator == "cedar_evaluator"
+    assert ended.evaluator == "dogwood_evaluator"
     assert ended.verdict == AutoApprovalVerdict.APPROVE
     assert ended.details["action"] == "probe/refund"
 
+    # Before asking, the verifier was told about the message that started the turn.
+    [recorded] = _RECORDED
+    assert recorded["caller"] == request["caller"]
+    assert recorded["fromHistoryStart"] is True
+    [message] = recorded["events"]
+    assert message["kind"] == "INPUT_EVENT_KIND_UPDATE"
+    assert message["name"] == "act"
+    assert message["payloads"][0]["value"] == {"text": "20"}
+    assert message["updateId"]
+
 
 async def test_forbidden_call_is_denied(env: WorkflowEnvironment) -> None:
-    _answer(
-        VerifyToolCallsResponse(
-            allowed=False, reason="tool probe/refund denied by Cedar policy refund-limit"
-        )
-    )
+    _answer(_response("DECISION_DENIED", "tool probe/refund denied by Dogwood policy refund-limit"))
     events = await _run(env, "act", "5000")
-    assert _reply(events) == "denied:tool probe/refund denied by Cedar policy refund-limit"
+    assert _reply(events) == "denied:tool probe/refund denied by Dogwood policy refund-limit"
     assert not _of(events, AgentEventType.TOOL_START)
 
 
-async def test_call_no_policy_permits_goes_to_a_human(env: WorkflowEnvironment) -> None:
+async def test_escalated_call_goes_to_a_human(env: WorkflowEnvironment) -> None:
     _answer(
-        VerifyToolCallsResponse(
-            allowed=False, reason="tool probe/refund not permitted by any Cedar policy"
-        )
+        _response("DECISION_ESCALATE", "tool probe/refund escalated by Dogwood policy refund-review")
     )
     events = await _run(
         env, "act", "20", until=AgentEventType.AUTO_APPROVAL_EVALUATION_ENDED
@@ -331,11 +391,19 @@ async def test_call_no_policy_permits_goes_to_a_human(env: WorkflowEnvironment) 
     assert not _of(events, AgentEventType.TOOL_APPROVAL_RESOLVED)
 
 
+async def test_retry_later_goes_to_a_human(env: WorkflowEnvironment) -> None:
+    _answer(_response("DECISION_RETRY_LATER", "rate limited"))
+    events = await _run(env, "act", "20", until=AgentEventType.AUTO_APPROVAL_EVALUATION_ERROR)
+    [error] = _of(events, AgentEventType.AUTO_APPROVAL_EVALUATION_ERROR)
+    assert "DECISION_RETRY_LATER" in error.message
+    assert not _of(events, AgentEventType.TOOL_APPROVAL_RESOLVED)
+
+
 async def test_policy_failure_goes_to_a_human(env: WorkflowEnvironment) -> None:
     _fail()
     events = await _run(env, "act", "20", until=AgentEventType.AUTO_APPROVAL_EVALUATION_ERROR)
     [error] = _of(events, AgentEventType.AUTO_APPROVAL_EVALUATION_ERROR)
-    assert error.evaluator == "cedar_evaluator"
+    assert error.evaluator == "dogwood_evaluator"
     assert not _of(events, AgentEventType.TOOL_APPROVAL_RESOLVED)
 
 
@@ -352,7 +420,7 @@ asyncio.run(main())
 async def test_script_is_judged_by_its_facts_and_host_calls_by_their_arguments(
     env: WorkflowEnvironment,
 ) -> None:
-    _answer(VerifyToolCallsResponse(allowed=True))
+    _answer(_response("DECISION_APPROVED"))
     events = await _run(env, "script", SCRIPT)
 
     assert "order:A-1" in _reply(events)
@@ -376,9 +444,22 @@ async def test_script_is_judged_by_its_facts_and_host_calls_by_their_arguments(
     }
     assert _ASKED[1]["toolCalls"][0]["parameters"][0]["value"] == {"order_id": "A-1"}
 
+    # Each evaluation first hands over only what arrived since the last one: the message before
+    # the script is judged, then each host call's result before the next host call is.
+    batches = [
+        [(e["kind"], e["name"], e["payloads"][0]["value"]) for e in r["events"]] for r in _RECORDED
+    ]
+    result = "INPUT_EVENT_KIND_ACTIVITY_RESULT"
+    assert batches == [
+        [("INPUT_EVENT_KIND_UPDATE", "script", {"text": SCRIPT})],
+        [(result, "probe/cancel_order/result", "cancelled:A-1")],
+        [(result, "probe/cancel_order/result", "cancelled:A-2")],
+    ]
+    assert [r["fromHistoryStart"] for r in _RECORDED] == [True, False, False]
+
 
 async def test_unparseable_script_goes_to_a_human(env: WorkflowEnvironment) -> None:
-    _answer(VerifyToolCallsResponse(allowed=True))
+    _answer(_response("DECISION_APPROVED"))
     events = await _run(
         env, "script", "def broken(:\n", until=AgentEventType.AUTO_APPROVAL_EVALUATION_ERROR
     )

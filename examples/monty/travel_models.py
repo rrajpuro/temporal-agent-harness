@@ -39,6 +39,9 @@ class FlightSearchResponse(BaseModel):
 class FlightBookingRequest(BaseModel):
     flight_id: str
     passenger_name: str
+    # The departure date, as searched. Optional so a caller that doesn't know it can still book;
+    # a tool policy can require it.
+    date: str | None = None
 
 
 class FlightBookingResponse(BaseModel):
@@ -46,6 +49,7 @@ class FlightBookingResponse(BaseModel):
     flight_id: str
     passenger_name: str
     status: str
+    date: str | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -75,7 +75,7 @@ class ScriptFacts(BaseModel):
 ScriptClassifier = Callable[[AutoApprovalContext, ScriptFacts], Awaitable[Mapping[str, int]]]
 """Answers questions about a Code Mode script that its source alone can't settle, keyed by
 question, each as how likely "yes" is from 0 to 100. Integers, not probabilities, because a
-policy engine like Cedar has no floats. Given the call (whose ``code_mode`` is set) and the
+policy engine like Dogwood has no floats. Given the call (whose ``code_mode`` is set) and the
 :class:`ScriptFacts` already established, so a model-backed classifier can be shown them.
 ``jev_script_classifier`` is the builtin."""
 

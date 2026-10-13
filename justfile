@@ -193,7 +193,7 @@ server:
         examples/monty/agents.toml \
         examples/tictactoe/agents.toml \
         examples/auto_mode/agents.toml \
-        examples/auto_mode_cedar/agents.toml \
+        examples/auto_mode_dogwood/agents.toml \
         examples/callback_tools/wiki_agent/agents.toml \
         examples/callback_tools/coding_agent/agents.toml \
         examples/agent_dag/agents.toml \
@@ -226,8 +226,8 @@ worker-tictactoe:
 worker-auto-mode:
     cd "{{justfile_directory()}}/examples/auto_mode" && just worker
 
-worker-auto-mode-cedar:
-    cd "{{justfile_directory()}}/examples/auto_mode_cedar" && just worker
+worker-auto-mode-dogwood:
+    cd "{{justfile_directory()}}/examples/auto_mode_dogwood" && just worker
 
 worker-wiki:
     cd "{{justfile_directory()}}/examples/callback_tools/wiki_agent" && just worker
@@ -257,7 +257,7 @@ workers:
     just worker-monty &
     just worker-tictactoe &
     just worker-auto-mode &
-    just worker-auto-mode-cedar &
+    just worker-auto-mode-dogwood &
     just worker-wiki &
     just worker-coding &
     just worker-agent-dag &
@@ -322,11 +322,11 @@ generate-registry-contract: install-nexgen
     "$HOME/.local/bin/nexgen" python nexus/mcp/nexus_mcp/durable_tools_gateway/registry.nexusrpc.yaml \
         --output nexus/mcp/nexus_mcp/durable_tools_gateway/generated
 
-# Regenerates the Cedar evaluator's VerifyToolCallsResponse bindings. The .py comes from protoc
+# Regenerates the Dogwood evaluator's tool-policy response bindings. The .py comes from protoc
 # 3.20 (grpcio-tools 1.48, which needs Python 3.10), the same generation temporalio ships, so it
 # loads on every protobuf runtime temporalio supports; the .pyi needs a newer protoc.
 generate-toolpolicy:
     uv tool run --python 3.10 --from grpcio-tools==1.48.2 --with "setuptools<70" \
-        python -m grpc_tools.protoc -I. --python_out=. temporal_agent_harness/harness/cedar_approvals/toolpolicy.proto
+        python -m grpc_tools.protoc -I. --python_out=. temporal_agent_harness/harness/dogwood_approvals/toolpolicy.proto
     uv tool run --from grpcio-tools==1.71.0 \
-        python -m grpc_tools.protoc -I. --pyi_out=. temporal_agent_harness/harness/cedar_approvals/toolpolicy.proto
+        python -m grpc_tools.protoc -I. --pyi_out=. temporal_agent_harness/harness/dogwood_approvals/toolpolicy.proto

@@ -406,11 +406,13 @@ of the approval wait.
 
 [`examples/auto_mode`](examples/auto_mode) runs all of this end to end: the Monty travel agent,
 with lookups auto-approved and bookings still coming to you.
-[`examples/auto_mode_cedar`](examples/auto_mode_cedar) is the same agent with the mechanism
-swapped for `agent.cedar_evaluator(...)`, which asks a [Cedar](https://www.cedarpolicy.com) tool
-policy served over Nexus. Code Mode scripts reach the policy as facts read off their source
-(`analyze_script`) and a classifier's answers about them, so a policy can forbid, say, booking
-in a loop.
+[`examples/auto_mode_dogwood`](examples/auto_mode_dogwood) is the same agent with the mechanism
+swapped for `agent.dogwood_evaluator(...)`, which asks a
+[Dogwood](https://github.com/dogwood-policy/dogwood) tool policy served over Nexus. The evaluator
+records the session's messages and tool results with the verifier, so a policy can look back over
+them: the example books a flight only for the traveler and date you entered on its trip form.
+Code Mode scripts reach the policy as facts read off their source (`analyze_script`) and a
+classifier's answers about them, so a policy can forbid, say, booking in a loop.
 
 ## A taste
 
@@ -1033,7 +1035,7 @@ Then create a session for any agent in the UI. A few need extra setup or a clien
 | OpenAI Hello · Pydantic AI Hello | `OPENAI_API_KEY`; chat directly in the UI |
 | Monty (both) | `GEMINI_API_KEY`; chat directly in the UI |
 | Travel agent (Jev Auto mode) | `GEMINI_API_KEY` **and** `TYPESAFE_API_KEY`; Monty with [auto mode](#auto-mode--letting-code-or-a-model-decide) judging its gated calls ([readme](examples/auto_mode/README.md)); chat directly in the UI |
-| Travel agent (Cedar Auto mode) | `GEMINI_API_KEY` **and** `TYPESAFE_API_KEY`; the same agent judged by a Cedar policy over Nexus, which needs the Cedar verifier running (`cargo`; [readme](examples/auto_mode_cedar/README.md)); chat directly in the UI |
+| Travel agent (Dogwood Auto mode) | `GEMINI_API_KEY` **and** `TYPESAFE_API_KEY`; the same agent judged by a Dogwood policy over Nexus, which needs the Dogwood verifier running (`cargo`; [readme](examples/auto_mode_dogwood/README.md)); chat directly in the UI |
 | Tic-Tac-Toe (TypeSafe) | `TYPESAFE_API_KEY`; no LLM — every move is a [TypeSafe](https://docs.typesafe.ai) System One judgment ([readme](examples/tictactoe/README.md)); send `new_game` then `play` in the UI |
 | ReAct Agent | `OPENAI_API_KEY`; the **F1 MCP server** at `F1_MCP_SERVER_HOME` ([setup](examples/react_agent/README.md#the-f1-mcp-server)); `just react-client` to answer its `ask_user` (chat alone works in the UI) |
 | Wiki (callback) | `GEMINI_API_KEY`; **`just wiki-client --wiki-dir ./wiki`** — required, or its tool calls hang |
