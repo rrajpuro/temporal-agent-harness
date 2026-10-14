@@ -9,7 +9,7 @@
 #
 # Then open http://localhost:8000, pick "OpenAI Hello", and chat (e.g. "What's the weather in
 # Paris?"). The reply streams token by token and the get_weather tool call shows up live.
-# `just server` builds the Svelte UI first (needs `pnpm`); `just ui-dev` runs it on Vite instead.
+# `just server` serves the committed Svelte UI; `just ui-dev` runs it on Vite instead.
 #
 # uv installs the project's `examples` dependency group (incl. the OpenAI Agents SDK) on demand,
 # so there's no separate install step. First-time setup: `cp .env.example .env.local` from the
@@ -66,3 +66,8 @@ ui-dev:
 # Run the OpenAIHelloAgent worker.
 worker:
     cd "{{root}}" && uv run --group examples python -m examples.openai_hello.worker
+
+# Inspect discovery metadata and confirm it matches the retained legacy TOML entry.
+# Starts no Temporal clients, Workers or model calls.
+verify-registry:
+    cd "{{root}}" && uv run --group examples python -c 'import json; from dataclasses import asdict; from temporal_agent_harness.web.registry import discover_agent_registry, load_agent_registry; registry = discover_agent_registry("examples.openai_hello"); assert registry == load_agent_registry("examples/openai_hello/agents.toml"); print(json.dumps(asdict(registry), indent=2)); print("Discovery matches the legacy registry.")'
