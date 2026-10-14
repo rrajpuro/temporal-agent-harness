@@ -8,7 +8,8 @@ harness tool adapted onto the SDK with ``as_openai_agent_tool``, so the harness 
 approval and its ``tool_start`` / ``tool_end`` / ``tool_error`` events.
 
 Run it with the shared example stack (session-manager worker + FastAPI/UI); this agent is
-registered in ``agents.toml`` and driven by the packaged web app. See ``README.md``.
+self-described on its class and driven by the packaged web app (TOML is also supported).
+See ``README.md``.
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ with workflow.unsafe.imports_passed_through():
     from temporal_agent_harness.harness.agent_workflow import AgentWorkflowRunner
 
 
-TASK_QUEUE = "openai-hello"
 DEFAULT_MODEL = "gpt-5.1"
 
 SYSTEM_INSTRUCTION = """\
@@ -49,7 +49,20 @@ async def get_weather(city: str) -> str:
     return f"It's 72°F and sunny in {city}."
 
 
-@agent.defn(name="OpenAIHelloAgent")
+@agent.defn(
+    agent_name="openai-hello",
+    description=(
+        "A hello-world OpenAI Agents SDK agent. Chat in plain text; it replies in prose and can "
+        "call one tool (get_weather) for a city's weather. Exists to show the harness streaming "
+        "path for the OpenAI integration end to end — model call → streaming activity → live turn "
+        "stream (reply_delta / tool_requested / tool_start / tool_end / model_interaction_*)."
+    ),
+    # Preserve the existing Temporal type and deployed registry identity.
+    name="OpenAIHelloAgent",
+    key="openai-hello",
+    task_queue="openai-hello",
+    label="OpenAI Hello",
+)
 class OpenAIHelloAgentWorkflow:
     """A one-tool conversational agent driven by the OpenAI Agents SDK."""
 
@@ -89,3 +102,8 @@ class OpenAIHelloAgentWorkflow:
 
         self._conversation = result.to_input_list()
         return TextReply(text=str(result.final_output))
+
+
+_DEFINITION = agent.agent_definition(OpenAIHelloAgentWorkflow)
+assert _DEFINITION is not None
+TASK_QUEUE = _DEFINITION.task_queue

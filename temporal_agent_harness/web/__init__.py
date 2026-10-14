@@ -2,7 +2,12 @@
 
 from typing import TYPE_CHECKING
 
-from temporal_agent_harness.web.registry import load_agent_registry
+from temporal_agent_harness.web.registry import (
+    agent_descriptor,
+    discover_agent_registry,
+    load_agent_registry,
+    registry_from_agents,
+)
 from temporal_agent_harness.web.session_manager import (
     SESSION_MANAGER_ID,
     SESSION_MANAGER_TASK_QUEUE,
@@ -39,6 +44,9 @@ def __getattr__(name: str):
 __all__ = [
     "SESSION_MANAGER_ID",
     "SESSION_MANAGER_TASK_QUEUE",
+    "agent_descriptor",
+    "discover_agent_registry",
+    "registry_from_agents",
     "AgentDescriptor",
     "AgentRegistry",
     "CreateSessionRequest",

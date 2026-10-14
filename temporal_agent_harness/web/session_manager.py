@@ -40,6 +40,19 @@ class AgentRegistry:
 
     agents: list[AgentDescriptor] = field(default_factory=list)
 
+    def __post_init__(self) -> None:
+        # All registry sources (TOML, discovery and explicit descriptors) have the same
+        # identity rules. Shared queues are intentional and are not identities.
+        for identity in ("key", "workflow_type", "agent"):
+            seen: set[str] = set()
+            for descriptor in self.agents:
+                value = getattr(descriptor, identity)
+                if value is None:
+                    continue
+                if value in seen:
+                    raise ValueError(f"Duplicate agent {identity} {value!r} in registry.")
+                seen.add(value)
+
     def by_workflow_type(self, workflow_type: str) -> AgentDescriptor | None:
         return next(
             (agent for agent in self.agents if agent.workflow_type == workflow_type),

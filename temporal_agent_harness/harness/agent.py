@@ -77,6 +77,7 @@
 #     @agent.activity_tool_defn()
 #     async def read_page(store: Injected[str], page_url: str) -> str: ...
 
+from temporal_agent_harness.harness.agent_definition import AgentDefinition, agent_definition
 from temporal_agent_harness.harness.agent_protocol import (
     AutoApprovalCriteria,
     AutoApprovalCriteriaSet,
@@ -127,6 +128,8 @@ from temporal_agent_harness.harness.subagent_toolset import (
 )
 
 __all__ = [
+    "AgentDefinition",
+    "agent_definition",
     "AgentToolContext",
     "AutoApprovalCriteria",
     "AutoApprovalCriteriaSet",

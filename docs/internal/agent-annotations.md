@@ -9,7 +9,7 @@ five decorators and one type annotation — plus related helpers. For *how* Pyth
 
 | Annotation | Kind | For |
 |---|---|---|
-| `@agent.defn` | class decorator | Used *instead of* `@workflow.defn` (it applies it: `name=` sets the workflow type; other `@workflow.defn` settings go in `workflow_options=agent.WorkflowDefnOptions(...)`). Contract-checks the class is a valid harness agent (its `@agent.init` `__init__` takes an `AgentConfig` plus optionally one `data` model, and it defines no `run`), stamps its discovered `@agent.accepts` handlers at import, generates the workflow's `run`, then registers it as a workflow. Fails fast on a malformed agent. |
+| `@agent.defn` | class decorator | Used *instead of* `@workflow.defn` (it applies it: `name=` sets the workflow type; `agent_name=` plus `description=` opts into derived registry metadata, with `key=`, `task_queue=` and `label=` overrides; other `@workflow.defn` settings go in `workflow_options=agent.WorkflowDefnOptions(...)`). Contract-checks the class is a valid harness agent (its `@agent.init` `__init__` takes an `AgentConfig` plus optionally one `data` model, and it defines no `run`), stamps its discovered `@agent.accepts` handlers at import, generates the workflow's `run`, then registers it as a workflow. Fails fast on a malformed agent. |
 | `@agent.init` | method decorator | Marks the agent's `__init__(self, config)`, where it builds its `AgentWorkflowRunner`. A second parameter takes the agent's own init data: `data: Model` (required) or `data: Model \| None = None` (optional). Both inputs are validated before `__init__` runs; invalid input, or missing required data, fails the workflow. Temporal's `@workflow.init`, re-exported. |
 | `@agent.setup` | method decorator | Optional. `async def (self) -> None`, awaited once after `__init__` and before the first message is handled. Messages that arrive meanwhile wait. |
 | `@agent.teardown` | method decorator | Optional. `async def (self) -> None`, awaited once after `close` drains in-flight messages, or when the workflow is cancelled. Skipped if setup never completed, and when the workflow fails. |
@@ -34,6 +34,12 @@ returning a decorator returning a wrapper).
 
 Same `agent.*` namespace, but helpers/factories/types (not decorators):
 
+- `agent.agent_definition(cls)` — immutable self-description for agents declared with
+  `agent_name=` and `description=`. Legacy decorators return `None`. Workers use its
+  `task_queue`; web registry conversion uses its exact registered `workflow_type` and actual
+  class import target. `web.discover_agent_registry(root)` builds a registry from one scoped
+  source package/module; `serve --discover root` exposes it without TOML. See the README for
+  normalization, compatibility, import constraints and deployment overrides.
 - `agent.tool_activity(tool)` — returns the registrable `@activity.defn` body for an
   `activity_tool_defn` tool (for the worker's `activities=[...]`).
 - `agent.subagent_toolset(...)` — factory: generates `start_/send_/stop_` tools from another agent's

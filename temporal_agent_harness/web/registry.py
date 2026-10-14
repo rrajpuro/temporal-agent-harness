@@ -1,4 +1,4 @@
-"""Registry loading helpers for the harness web API."""
+"""TOML loading and decorated-class conversion for the shared UI/session registry."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import tomllib
 from collections.abc import Iterable
 from pathlib import Path
 
+from temporal_agent_harness.harness.agent_definition import agent_definition
+from temporal_agent_harness.harness.agent_discovery import discover_agent_classes
 from temporal_agent_harness.web.session_manager import AgentDescriptor, AgentRegistry
 
 _REQUIRED_FIELDS = ("key", "workflow_type", "task_queue", "label", "description")
@@ -81,3 +83,32 @@ def load_agent_registries(paths: Iterable[Path | str]) -> AgentRegistry:
         raise ValueError("No agent registries provided.")
 
     return AgentRegistry(agents=agents)
+
+
+def agent_descriptor(cls: type) -> AgentDescriptor:
+    """Convert a self-describing decorated class to the existing web/session wire shape."""
+    definition = agent_definition(cls)
+    if definition is None:
+        raise ValueError(f"{cls.__qualname__} needs @agent.defn(agent_name=..., description=...).")
+    if "<locals>" in cls.__qualname__ or cls.__module__ == "__main__":
+        raise ValueError(
+            f"Agent class {definition.agent!r} must be importable by module and qualified name."
+        )
+    return AgentDescriptor(
+        key=definition.key,
+        workflow_type=definition.workflow_type,
+        task_queue=definition.task_queue,
+        label=definition.label,
+        description=definition.description,
+        agent=definition.agent,
+    )
+
+
+def registry_from_agents(classes: Iterable[type]) -> AgentRegistry:
+    """Shared conversion for explicit class lists and discovery; reject ambiguous identities."""
+    return AgentRegistry(agents=[agent_descriptor(cls) for cls in classes])
+
+
+def discover_agent_registry(root: str) -> AgentRegistry:
+    """Build the UI/session registry from classes discovered under a package/module root."""
+    return registry_from_agents(discover_agent_classes(root))

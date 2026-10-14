@@ -53,6 +53,10 @@ from temporalio.workflow import ActivityConfig
 from temporal_agent_harness.harness.state import StateRef
 from temporal_agent_harness.harness.state.decl import declared_states, state_ref
 from temporal_agent_harness.harness.state.events import StateEvent, StateSnapshot
+from temporal_agent_harness.harness.agent_definition import (
+    _DEFINITION_ATTR,
+    _make_agent_definition,
+)
 from temporal_agent_harness.harness.agent_protocol import (
     AGENT_ID_LENGTH,
     APPROVAL_SHORT_ID_LENGTH,
@@ -1161,6 +1165,11 @@ def defn(cls: _WorkflowClass, /) -> _WorkflowClass: ...
 def defn(
     *,
     name: str | None = None,
+    agent_name: str | None = None,
+    description: str | None = None,
+    key: str | None = None,
+    task_queue: str | None = None,
+    label: str | None = None,
     workflow_options: WorkflowDefnOptions = WorkflowDefnOptions(),
 ) -> Callable[[_WorkflowClass], _WorkflowClass]: ...
 def defn(
@@ -1168,6 +1177,11 @@ def defn(
     /,
     *,
     name: str | None = None,
+    agent_name: str | None = None,
+    description: str | None = None,
+    key: str | None = None,
+    task_queue: str | None = None,
+    label: str | None = None,
     workflow_options: WorkflowDefnOptions = WorkflowDefnOptions(),
 ) -> Any:
     """Declare an agent workflow class: validate that it honors the standardized agent
@@ -1191,8 +1205,16 @@ def defn(
     any), drives the runner's turn loop until ``close`` drains, then awaits the
     ``@agent.teardown`` method (if any). Defining ``run`` yourself raises.
 
-    ``name`` is the workflow type name (defaults to the class name). Any other
-    ``@workflow.defn`` setting goes in ``workflow_options`` (see
+    ``name`` remains the registered Temporal workflow type (defaults to the class name
+    for legacy decorators). Opt in to self-description with ``agent_name="code-review"``
+    and ``description="Reviews code."``: this derives key/task queue ``code-review-agent``,
+    workflow type ``CodeReviewAgent``, and label ``Code Review Agent``. ``name``, ``key``,
+    ``task_queue`` and ``label`` explicitly override those defaults. Metadata is readable
+    through ``agent.agent_definition(cls)``; legacy decorators carry no registry metadata.
+    Spaces, underscores, hyphens and camel/Pascal word boundaries normalize to hyphens;
+    trailing ``agent`` words are removed before adding the conventional suffix.
+    Description is required in this mode. Any other ``@workflow.defn`` setting goes in
+    ``workflow_options`` (see
     :class:`WorkflowDefnOptions`).
 
     The checks run at definition (import) time: ``__init__`` must be ``@agent.init`` and take
@@ -1213,7 +1235,23 @@ def defn(
     with a bare ``@workflow.defn``.
     """
 
+    if agent_name is None and any(
+        value is not None for value in (description, key, task_queue, label)
+    ):
+        raise ValueError("description/key/task_queue/label require agent_name.")
+
     def decorate(c: type) -> type:
+        metadata = (
+            None if agent_name is None else _make_agent_definition(
+                c,
+                agent_name=agent_name,
+                description=description,
+                name=name,
+                key=key,
+                task_queue=task_queue,
+                label=label,
+            )
+        )
         _reject_authored_run(c)
         init_data = _agent_init_spec(c)
         # Discover + validate the @agent.accepts handlers now (import time), and stamp them
@@ -1227,12 +1265,15 @@ def defn(
             _lifecycle_hook(c, _TEARDOWN_MARKER, "teardown"),
         )
         c.__init__ = _validating_init(c, init_data)  # type: ignore[misc]
-        return workflow.defn(
-            name=name,
+        result = workflow.defn(
+            name=metadata.workflow_type if metadata is not None else name,
             sandboxed=workflow_options.sandboxed,
             failure_exception_types=workflow_options.failure_exception_types,
             versioning_behavior=workflow_options.versioning_behavior,
         )(c)
+        if metadata is not None:
+            setattr(result, _DEFINITION_ATTR, metadata)
+        return result
 
     return decorate(cls) if cls is not None else decorate
 

@@ -15,7 +15,7 @@ A normal dev setup runs both subcommands:
     uv run temporal-agent-harness serve path/to/agents.toml   # prebuilt Svelte UI + JSON API
 
 ``serve`` publishes the UI built into the wheel (``temporal_agent_harness/ui/dist``) over one or
-more ``agents.toml`` registries. ``session-manager`` runs the agent-agnostic worker that hosts
+more ``agents.toml`` registries, or self-describing classes under ``--discover my_app.agents``. ``session-manager`` runs the agent-agnostic worker that hosts
 the packaged ``SessionManagerWorkflow``; without it the server comes up but ``/api/agents`` and
 session creation have nothing to answer them, since both are workflow queries.
 
@@ -59,6 +59,7 @@ Temporal connection:
 Examples:
   temporal-agent-harness session-manager
   temporal-agent-harness serve ./agents.toml
+  temporal-agent-harness serve --discover my_app.agents
   temporal-agent-harness serve one/agents.toml two/agents.toml --port 9000
   temporal-agent-harness serve ./agents.toml --temporal-address my-host:7233
 
@@ -73,7 +74,13 @@ def _serve(args: argparse.Namespace) -> None:
     # Imported at call time so `--help` on the other subcommand doesn't pay for FastAPI.
     from temporal_agent_harness.web.serve import run_server
 
-    run_server(*args.registry_paths, host=args.host, port=args.port)
+    try:
+        if args.discover is None:
+            run_server(*args.registry_paths, host=args.host, port=args.port)
+        else:
+            run_server(discovery_root=args.discover, host=args.host, port=args.port)
+    except ValueError as exc:
+        raise SystemExit(f"temporal-agent-harness serve: {exc}") from None
 
 
 def _session_manager(args: argparse.Namespace) -> None:
@@ -121,7 +128,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="temporal-agent-harness",
         description="Run the packaged Temporal agent harness: the web UI over your "
-        "agents.toml registries, and the session-manager worker they need. Or print an "
+        "TOML registries or discovered Python agents, and their session-manager worker. Or print an "
         "agent's schema for client codegen.",
         epilog=TEMPORAL_CONNECTION_HELP,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -131,9 +138,10 @@ def main(argv: list[str] | None = None) -> None:
     serve = subparsers.add_parser(
         "serve",
         parents=[connection],
-        help="Serve the packaged web UI over one or more agents.toml registries.",
+        help="Serve the packaged web UI over TOML registries or discovered Python agents.",
         description="Serve the prebuilt harness web UI and JSON API over one or more "
-        "agents.toml registries. Needs `temporal-agent-harness session-manager` running "
+        "agents.toml registries or --discover MODULE_OR_PACKAGE. Needs "
+        "`temporal-agent-harness session-manager` running "
         "against the same namespace, since the agent list and session creation are "
         "workflow queries.",
         epilog=TEMPORAL_CONNECTION_HELP,
@@ -141,10 +149,18 @@ def main(argv: list[str] | None = None) -> None:
     )
     serve.add_argument(
         "registry_paths",
-        nargs="+",
+        nargs="*",
         metavar="registry_path",
         help="Path(s) to agents.toml registries. One serves that registry standalone; "
         "several are merged so the UI lists all their agents.",
+    )
+    serve.add_argument(
+        "--discover",
+        default=None,
+        metavar="MODULE_OR_PACKAGE",
+        help="Discover @agent.defn(agent_name=...) classes under one importable Python "
+        "module/package instead of TOML. Only definition modules are imported; those "
+        "modules and their package initializers must be safe to import.",
     )
     serve.add_argument("--host", default="0.0.0.0")
     serve.add_argument("--port", type=int, default=8000)
@@ -219,6 +235,9 @@ def main(argv: list[str] | None = None) -> None:
     if handler is None:
         parser.print_help()
         raise SystemExit(2)
+
+    if args.command == "serve" and bool(args.registry_paths) == (args.discover is not None):
+        parser.error("serve requires either registry paths or --discover MODULE_OR_PACKAGE")
 
     if hasattr(args, "temporal_address"):
         ensure_temporal_address(args.temporal_address)

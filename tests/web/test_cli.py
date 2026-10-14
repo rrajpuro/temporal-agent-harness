@@ -320,3 +320,26 @@ def test_schema_protocol_prints_the_event_protocol(capsys: pytest.CaptureFixture
 def test_schema_needs_exactly_one_of_an_agent_or_protocol(argv: list[str]) -> None:
     with pytest.raises(SystemExit, match="give an agent class or --protocol"):
         main(argv)
+
+
+def test_serve_forwards_one_discovery_root(monkeypatch):
+    captured = {}
+    def fake_run(*paths, **kwargs):
+        captured.update(paths=paths, **kwargs)
+    monkeypatch.setattr("temporal_agent_harness.web.serve.run_server", fake_run)
+    main(["serve", "--discover", "my_app.agents", "--port", "9000"])
+    assert captured == {
+        "paths": (), "discovery_root": "my_app.agents", "host": "0.0.0.0", "port": 9000,
+    }
+
+
+@pytest.mark.parametrize("argv", [
+    ["serve"], ["serve", "agents.toml", "--discover", "my_app.agents"],
+])
+def test_serve_requires_exactly_one_source(argv, monkeypatch):
+    def unexpected_run(*args, **kwargs):
+        raise AssertionError("invalid arguments reached server")
+    monkeypatch.setattr("temporal_agent_harness.web.serve.run_server", unexpected_run)
+    with pytest.raises(SystemExit) as exc:
+        main(argv)
+    assert exc.value.code == 2

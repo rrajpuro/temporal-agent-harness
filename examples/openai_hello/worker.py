@@ -43,7 +43,9 @@ from temporal_agent_harness.ai_sdks.openai_agents_harness import (
     stream_to_provider,
 )
 
-from .workflow import TASK_QUEUE, OpenAIHelloAgentWorkflow
+from temporal_agent_harness.harness import agent
+
+from .workflow import OpenAIHelloAgentWorkflow
 
 
 async def main() -> None:
@@ -53,7 +55,9 @@ async def main() -> None:
         force=True,
     )
 
-    task_queue = os.environ.get("OPENAI_HELLO_TASK_QUEUE", TASK_QUEUE)
+    definition = agent.agent_definition(OpenAIHelloAgentWorkflow)
+    assert definition is not None
+    task_queue = os.environ.get("OPENAI_HELLO_TASK_QUEUE", definition.task_queue)
 
     if not os.environ.get("OPENAI_API_KEY"):
         sys.exit("error: OPENAI_API_KEY env var not set")

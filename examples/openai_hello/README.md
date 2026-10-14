@@ -31,12 +31,18 @@ streaming activity, to the live turn stream the web UI consumes.
 |---|---|
 | `workflow.py` | `OpenAIHelloAgent` — the harness agent; one `ask` handler, one `get_weather` tool, driven by `Runner.run_streamed`. |
 | `worker.py` | Worker hosting the workflow; wires the OpenAI plugin for the harness streaming seam, plus `AgentHarnessPlugin` for the harness's own converter and activities. |
-| `agents.toml` | Registry entry that makes this agent selectable in the shared web UI. |
+| `agents.toml` | Supported legacy alternative to discovery, with the same identity as the decorator. |
 
 There is **no per-example client**: like the Monty example, this agent is driven by the shared
 example stack — the packaged `SessionManagerWorkflow` worker plus the FastAPI app and web UI
 (`temporal-agent-harness serve`), which send messages and stream turns through the harness's built-in
-`AgentClient`. Registering the agent in `agents.toml` is all it takes to make it driveable.
+`AgentClient`. `@agent.defn(agent_name="openai-hello", description=..., name="OpenAIHelloAgent",
+key="openai-hello", task_queue="openai-hello", label="OpenAI Hello")` describes this agent for
+`serve --discover examples.openai_hello`. The explicit overrides preserve its historical
+Workflow type, key, queue and label. The Worker reads its default queue from
+`agent.agent_definition(OpenAIHelloAgentWorkflow)`, so serving and Worker registration share
+one definition. If `OPENAI_HELLO_TASK_QUEUE` changes, configure the serving registry to use that
+queue too (see the main README's runtime deployment override example).
 
 ## Run it
 
@@ -46,13 +52,13 @@ Temporal connection profile). Then, each in its own terminal:
 ```sh
 just temporal          # 1. local Temporal dev server (or bring your own)
 just session-manager   # 2. packaged session-manager worker
-just server            # 3. builds the Svelte UI, then serves API + UI on http://localhost:8000
+just server            # 3. serves the packaged UI + API on http://localhost:8000
 just worker            # 4. the agent worker
 ```
 
-`just server` builds the web UI first, so it needs `pnpm` on your PATH. (If the build reports
-missing modules, run `just app-install` once. For UI hot-reloading, `just ui-dev` runs it on Vite
-with `/api` proxied to the server on :8000.)
+`just server` serves the committed UI assets. After editing the UI, use `just app-build`
+(with `pnpm` on your PATH) to rebuild them. For UI hot reload, `just ui-dev` runs Vite
+with `/api` proxied to the server on :8000.
 
 Open http://localhost:8000, pick **OpenAI Hello**, and chat — e.g. *"What's the weather in
 Paris?"*. The reply streams in token by token and the `get_weather` tool call appears live, each
@@ -62,6 +68,6 @@ Without `just`, the equivalent commands (from the repo root):
 
 ```sh
 uv run --group examples temporal-agent-harness session-manager
-uv run --group examples temporal-agent-harness serve examples/openai_hello/agents.toml --host 0.0.0.0 --port 8000
+uv run --group examples temporal-agent-harness serve --discover examples.openai_hello --host 0.0.0.0 --port 8000
 uv run --group examples python -m examples.openai_hello.worker
 ```

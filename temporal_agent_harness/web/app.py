@@ -57,7 +57,7 @@ from temporal_agent_harness.web.file_view import (
     okf_graph,
     view_file,
 )
-from temporal_agent_harness.web.registry import load_agent_registry
+from temporal_agent_harness.web.registry import discover_agent_registry, load_agent_registry
 from temporal_agent_harness.web.session_manager import (
     SESSION_MANAGER_ID,
     SESSION_MANAGER_TASK_QUEUE,
@@ -123,6 +123,7 @@ def create_agent_harness_app(
     *,
     registry: RegistrySource | None = None,
     registry_path: Path | str | None = None,
+    discovery_root: str | None = None,
     manager_workflow_id: str = SESSION_MANAGER_ID,
     manager_task_queue: str = SESSION_MANAGER_TASK_QUEUE,
     static_dir: Path | str | None = None,
@@ -134,7 +135,10 @@ def create_agent_harness_app(
 
     Args:
         registry: In-memory registry or a callable that returns one at startup.
-        registry_path: TOML registry path. Mutually exclusive with ``registry``.
+        registry_path: TOML registry path. Mutually exclusive with the other sources.
+        discovery_root: Python module/package containing self-describing agent classes.
+            Mutually exclusive with ``registry`` and ``registry_path``. Resolved before
+            connecting to Temporal at startup; imports must be free of startup side effects.
         manager_workflow_id: Deterministic workflow ID for the session manager.
         manager_task_queue: Task queue where the session manager worker polls.
         static_dir: Optional directory containing static UI assets. When omitted,
@@ -153,6 +157,7 @@ def create_agent_harness_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        resolved_registry = _resolve_registry(registry, registry_path, discovery_root)
         connect_config = ClientConfig.load_client_connect_config()
         # The harness plugin is where the data converter is DEFINED — the same one every agent
         # worker and the session-manager worker get by adding the same plugin. An offloaded
@@ -164,7 +169,6 @@ def create_agent_harness_app(
             plugins=[AgentHarnessPlugin(large_payload_offload=large_payload_offload)],
         )
 
-        resolved_registry = _resolve_registry(registry, registry_path)
         # Read from this process's own registry rather than the manager's copy, so a change to
         # an agent's init data shows up on restart without resetting the manager.
         app.state.agent_starts = resolve_agent_starts(resolved_registry)
@@ -463,16 +467,19 @@ def create_agent_harness_app(
 def _resolve_registry(
     registry: RegistrySource | None,
     registry_path: Path | str | None,
+    discovery_root: str | None = None,
 ) -> AgentRegistry:
-    if registry is not None and registry_path is not None:
-        raise ValueError("Pass either registry or registry_path, not both.")
+    if sum(source is not None for source in (registry, registry_path, discovery_root)) > 1:
+        raise ValueError("Pass only one of registry, registry_path or discovery_root.")
+    if discovery_root is not None:
+        return discover_agent_registry(discovery_root)
     if isinstance(registry, AgentRegistry):
         return registry
     if callable(registry):
         return registry()
     if registry_path is not None:
         return load_agent_registry(registry_path)
-    raise ValueError("create_agent_harness_app requires registry or registry_path.")
+    raise ValueError("create_agent_harness_app requires registry, registry_path or discovery_root.")
 
 
 async def _workflow_execution_state(
