@@ -132,113 +132,32 @@ temporal server start-dev
 uv run temporal-agent-harness session-manager
 
 # 3. The prebuilt Svelte UI + JSON API on http://localhost:8000
-uv run temporal-agent-harness serve --discover my_app.agents
+uv run temporal-agent-harness serve ./agents.toml
 
 # 4. Your own worker, hosting your agent workflows on their own task queue
 uv run python -m my_app.worker
 ```
 
-Open <http://localhost:8000> and create a session. Describe each agent on its Workflow class,
-then configure one package or module root for the app to discover:
+Open <http://localhost:8000> and create a session. `serve` accepts several registries and merges
+them (`serve one/agents.toml two/agents.toml`), so a single UI can list agents from more than one
+project.
 
-```python
-# my_app/agents/code_review.py
-from temporal_agent_harness.harness import agent
-from temporal_agent_harness.harness.agent_protocol import AgentConfig
+Alternatively, describe agents with `@agent.defn(agent_name="code-review", description="Reviews code.")`
+and discover one Python module or package:
 
-@agent.defn(agent_name="code-review", description="Reviews proposed code changes.")
-class CodeReviewAgentWorkflow:
-    @agent.init
-    def __init__(self, config: AgentConfig) -> None:
-        # Build this agent's runner here, as in the authoring examples below.
-        ...
+```bash
+uv run temporal-agent-harness serve --discover my_app.agents
 ```
 
-This derives the registry used by the UI and session manager directly from the class:
+`code-review` derives key and task queue `code-review-agent`, Workflow type `CodeReviewAgent`,
+and label `Code Review Agent`. Import targets and schemas come from the actual decorated class.
+Read the same metadata on Workers with `agent.agent_definition(cls)` and use its `task_queue`.
+Use `name=`, `key=`, `task_queue=` and `label=` for overrides; when migrating, retain existing
+Workflow names and deployment identities. Legacy decorators and TOML loading remain supported.
+Discovery imports definition modules and their dependencies, so keep package initializers and
+agent modules free of Worker/client startup or network side effects.
 
-| Field | Value |
-|---|---|
-| Key | `code-review-agent` |
-| Temporal Workflow type | `CodeReviewAgent` |
-| Task queue | `code-review-agent` |
-| UI label | `Code Review Agent` |
-| Description | `Reviews proposed code changes.` |
-| Agent import target | `my_app.agents.code_review:CodeReviewAgentWorkflow` |
-
-The Python class name can differ from the Workflow type. The import target always uses the
-class's actual module and qualified name. Init data, handlers and state schemas come from that
-same class. Read its immutable metadata with `agent.agent_definition(CodeReviewAgentWorkflow)`;
-convert explicit class lists with `web.registry_from_agents([...])`, or discover a registry with
-`web.discover_agent_registry("my_app.agents")`.
-
-`agent_name` accepts ASCII words separated by hyphens, underscores or spaces, plus camel/Pascal
-case. Names normalize to lowercase hyphenated words; trailing `agent` words are removed before
-adding the suffix once (`code_review_agent` and `CodeReviewAgent` both become `code-review`).
-Empty names, names consisting only of `agent`, and punctuation outside the separators fail at
-definition time. Description must be nonempty. Use `name=`, `key=`, `task_queue=` and `label=`
-for deliberate overrides. An overridden key is also the default queue unless `task_queue=` is
-explicit. Acronym capitalization follows ordinary title casing; override the label or Workflow
-name when an acronym must keep its existing spelling.
-
-Register the actual class on a Worker and consume the same queue metadata:
-
-```python
-from temporalio.worker import Worker
-from temporal_agent_harness.harness import agent
-from my_app.agents.code_review import CodeReviewAgentWorkflow
-
-metadata = agent.agent_definition(CodeReviewAgentWorkflow)
-assert metadata is not None
-worker = Worker(client, task_queue=metadata.task_queue, workflows=[CodeReviewAgentWorkflow])
-```
-
-The decorator registers `metadata.workflow_type` with Temporal. Discovery lists agents; it
-starts no Workers or clients and does not register Activities or SDK plugins. Supply those on
-Workers as usual. For multiple agents, `harness.agent_discovery.discover_agent_classes(root)`
-returns the same ordered classes; group them by `agent.agent_definition(cls).task_queue` and
-host each group on a Worker polling that queue. Apply deployment queue overrides consistently
-to both the serving registry and Workers. For runtime overrides, use `dataclasses.replace` on
-the descriptors from `discover_agent_registry` and pass that `AgentRegistry` to the app; use
-those same descriptors' queues on Workers. Changing only a Worker's environment does not
-change the queue the session manager uses. For example, share one deployment registry between
-web startup and Worker queue selection:
-
-```python
-from dataclasses import replace
-from temporal_agent_harness.web import AgentRegistry, create_agent_harness_app, discover_agent_registry
-
-base = discover_agent_registry("my_app.agents")
-registry = AgentRegistry(agents=[replace(item, task_queue="review-prod") for item in base.agents])
-app = create_agent_harness_app(registry=registry)
-# Agent Workers use registry.by_workflow_type(metadata.workflow_type).task_queue.
-```
-
-For embedded servers, use `create_agent_harness_app(discovery_root="my_app.agents")` or
-`web.serve.create_app(discovery_root="my_app.agents")`. Discovery is exclusive with TOML paths
-or an explicitly supplied registry. It recursively scans only the specified source package
-(or one module), sorts by module and qualified name, and imports modules with statically
-recognizable `@agent.defn(agent_name=...)` declarations. Direct harness imports and import
-aliases are supported; dynamic decorator factories, star imports and decorator re-exports
-require explicit class registration. Classes re-exported by other modules are not duplicated.
-Duplicate keys, Workflow types or class import targets fail registry construction; shared task
-queues are allowed. Import failures stop discovery rather than publishing a partial list.
-
-Discovery uses ordinary Python imports: selected modules, their dependencies, and package
-initializers must be free of runtime startup and network side effects. Keep definitions in a
-small dedicated package and Worker/server/client startup inside functions with `__main__`
-guards. Launcher files without agent declarations are scanned as source but are not imported.
-Source files are required; bytecode-only modules and custom import loaders are not supported.
-
-Existing `@agent.defn`, `@agent.defn()` and `@agent.defn(name="ExistingType")` keep their exact
-registered Workflow names and remain supported with TOML. They do not opt into discovery.
-When migrating an existing agent, retain `name="ExistingType"` along with the new `agent_name`
-and preserve its current key, queue and label through overrides. Changing a registered Workflow
-type can strand existing executions; adding metadata does not require that change. An already
-running session manager retains its recorded registry until you replace that manager using
-your normal deployment procedure.
-
-TOML remains supported: `serve ./agents.toml` serves one registry, and
-`serve one/agents.toml two/agents.toml` merges several. A TOML entry lists the same metadata:
+A TOML registry lists the same launchable-agent metadata:
 
 ```toml
 [[agents]]

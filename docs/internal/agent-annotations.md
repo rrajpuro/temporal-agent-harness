@@ -39,7 +39,7 @@ Same `agent.*` namespace, but helpers/factories/types (not decorators):
   `task_queue`; web registry conversion uses its exact registered `workflow_type` and actual
   class import target. `web.discover_agent_registry(root)` builds a registry from one scoped
   source package/module; `serve --discover root` exposes it without TOML. See the README for
-  normalization, compatibility, import constraints and deployment overrides.
+  CLI and Worker usage, and the `defn` docstring for normalization rules.
 - `agent.tool_activity(tool)` — returns the registrable `@activity.defn` body for an
   `activity_tool_defn` tool (for the worker's `activities=[...]`).
 - `agent.subagent_toolset(...)` — factory: generates `start_/send_/stop_` tools from another agent's
