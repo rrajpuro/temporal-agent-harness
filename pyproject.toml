@@ -44,6 +44,7 @@ Changelog = "https://github.com/temporal-community/temporal-agent-harness/releas
 temporal-agent-harness = "temporal_agent_harness.web.cli:main"
 
 [project.optional-dependencies]
+observability = ["temporalio[opentelemetry]>=1.31.0"]
 # The Google Gemini SDK integration: temporal_agent_harness.ai_sdks.google_genai_plugin.
 genai = [
     "google-genai>=2.0.0",

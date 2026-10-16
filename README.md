@@ -509,6 +509,32 @@ The worker declares only its workflows. Adding the plugin brings:
 Order it last, after any AI SDK's plugin, so that SDK's payload converter wins. Registering it
 on the client is enough — Temporal applies a client's plugins to workers built from it.
 
+## Langfuse experiments with native agent traces
+
+Install the `observability` extra and register `LangfuseExperimentPlugin(provider)`
+before Temporal's `OpenTelemetryPlugin` in the client's plugin list. Use a
+replay-safe provider from `temporalio.contrib.opentelemetry.create_tracer_provider`
+and enable your AI SDK's native instrumentation with that provider.
+
+```python
+from temporal_agent_harness.langfuse import experiment_item
+
+with experiment_item(
+    experiment_id=experiment_id,
+    name=experiment_name,
+    dataset_id=dataset_id,
+    item_id=dataset_item_id,
+) as item:
+    result = await run_agent(task)
+```
+
+The first native `invoke_agent` (or explicitly typed `AGENT`) span becomes the
+experiment-item root; no wrapper span is created. Its native input/output and
+scores belong to that item. `item.trace_id` and `item.observation_id` expose the
+link after the agent starts. Activity traces inherit experiment identity; optional
+`expected_output` and item `metadata` stay on the root, outside propagated baggage.
+Ordinary agent runs outside this scope receive no experiment attributes.
+
 ## Code Mode
 
 Most agents call tools one at a time — a round-trip per call. **Code Mode** hands the model a

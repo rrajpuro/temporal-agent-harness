@@ -3174,6 +3174,9 @@ nexus-mcp = [
     { name = "temporal-nexus-mcp" },
     { name = "temporalio", extra = ["opentelemetry"] },
 ]
+observability = [
+    { name = "temporalio", extra = ["opentelemetry"] },
+]
 openai-agents = [
     { name = "mcp" },
     { name = "openai-agents" },
@@ -3237,10 +3240,11 @@ requires-dist = [
     { name = "temporalio", specifier = ">=1.31.0" },
     { name = "temporalio", extras = ["aioboto3"], marker = "extra == 's3'", specifier = ">=1.31.0" },
     { name = "temporalio", extras = ["opentelemetry"], marker = "extra == 'nexus-mcp'", specifier = ">=1.31.0" },
+    { name = "temporalio", extras = ["opentelemetry"], marker = "extra == 'observability'", specifier = ">=1.31.0" },
     { name = "temporalio", extras = ["opentelemetry"], marker = "extra == 'openai-agents'", specifier = ">=1.31.0" },
     { name = "typesafe-sdk", marker = "extra == 'jev'", specifier = ">=0.6.0" },
 ]
-provides-extras = ["genai", "s3", "openai-agents", "pydantic-ai", "ui", "code-mode", "jev", "nexus-mcp"]
+provides-extras = ["observability", "genai", "s3", "openai-agents", "pydantic-ai", "ui", "code-mode", "jev", "nexus-mcp"]
 
 [package.metadata.requires-dev]
 dev = [
