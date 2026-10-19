@@ -53,8 +53,8 @@ describe("streaming Markdown lists", () => {
         `Intro\n\n${marker} `,
         `Intro\n\n${marker} **12** = 2² × 3`
       ]);
-      assert.ok(empty.includes(`<${tag}><li></li></${tag}>`), empty);
-      assert.ok(complete.includes(`<${tag}><li><strong>12</strong> = 2² × 3</li></${tag}>`), complete);
+      assert.match(empty, new RegExp(`<${tag}(?:\\s[^>]*)?><li>\\s*</li></${tag}>`));
+      assert.match(complete, new RegExp(`<${tag}(?:\\s[^>]*)?><li>(?:<p>)?<strong>12</strong> = 2² × 3(?:</p>)?</li></${tag}>`));
     });
   }
 
@@ -64,15 +64,20 @@ describe("streaming Markdown lists", () => {
     assert.ok(complete.includes("<p>+ <strong>12</strong> = 2² × 3</p>"), complete);
   });
 
-  it("consumes an incomplete nested item after completed list items", () => {
+  it("keeps an incomplete nested item inside its completed numbered parent", () => {
     const [html] = renderPrefixes(["1. **Prime factorization**  \n   - 12 = 2² × 3\n   - "]);
-    assert.ok(html.includes("<ol><li><strong>Prime factorization</strong>  </li></ol>"), html);
-    assert.ok(html.includes("<ul><li>12 = 2² × 3</li><li></li></ul>"), html);
+    assert.match(html, /<ol(?:\s[^>]*)?><li>(?:<p>)?<strong>Prime factorization<\/strong>\s*(?:<\/p>)?<ul><li>(?:<p>)?12 = 2² × 3(?:<\/p>)?<\/li><li>\s*<\/li><\/ul><\/li><\/ol>/);
+  });
+
+  it("keeps excessively nested markers visible without exhausting the call stack", () => {
+    const [html] = renderPrefixes(["- ".repeat(4000) + "Detail"]);
+    assert.ok(html.includes("Detail"), html);
+    assert.ok(html.includes("- - -"), "unparsed markers remain visible at the nesting limit");
   });
 
   it("renders every prefix of a streamed response with nested lists", () => {
-    // Every character boundary covers streamed chunks where a list marker and its trailing
-    // space arrive before the item's contents, including nested and repeated list items.
+    // Every character boundary covers chunks where markers, their spacing, and their contents
+    // arrive separately. The final structure must still number all three top-level steps.
     const text = "Let’s find the LCM of 12, 45, and 2 step by step.\n\n" +
       "1. **Prime factorization**  \n   - 12 = 2² × 3  \n   - 45 = 3² × 5  \n   - 2 = 2\n\n" +
       "2. **Take each prime with the highest power appearing in any number**  \n" +
@@ -82,6 +87,11 @@ describe("streaming Markdown lists", () => {
       "   = 36 × 5  \n   = 180\n\n**LCM(12, 45, 2) = 180**";
     const prefixes = Array.from({ length: text.length + 1 }, (_, index) => text.slice(0, index));
     const output = renderPrefixes(prefixes);
-    assert.ok(output.at(-1).includes("<strong>LCM(12, 45, 2) = 180</strong>"));
+    const complete = output.at(-1);
+    assert.equal((complete.match(/<ol(?:\s[^>]*)?>/g) ?? []).length, 1, complete);
+    assert.equal((complete.match(/<ul>/g) ?? []).length, 2, complete);
+    assert.match(complete, /<\/ul><\/li><li>(?:<p>)?<strong>Take each prime/);
+    assert.match(complete, /<\/ul><\/li><li>(?:<p>)?<strong>Multiply them together/);
+    assert.ok(complete.includes("<strong>LCM(12, 45, 2) = 180</strong>"), complete);
   });
 });
